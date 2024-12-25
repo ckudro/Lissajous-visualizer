@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lissajous Curve Visualizer</title>
+    <!-- Using CDN for p5.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .control-group {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .control-group h3 {
+            margin-top: 0;
+            color: #1e293b;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #475569;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin: 8px 0;
+        }
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            padding: 2px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        #canvas-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .machine-settings {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 6px;
+        }
+        select, input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            margin: 4px 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+        .status {
+            color: #16a34a;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lissajous Curve Visualizer</h1>
+        <div id="canvas-container"></div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <h3>Pattern Controls</h3>
+                <label>X Frequency (<span id="freqX-value">3</span>)</label>
+                <input type="range" id="freqX" min="1" max="10" value="3" step="1">
+                
+                <label>Y Frequency (<span id="freqY-value">2</span>)</label>
+                <input type="range" id="freqY" min="1" max="10" value="2" step="1">
+                
+                <label>Phase (<span id="phase-value">0.5</span>π)</label>
+                <input type="range" id="phase" min="0" max="2" value="0.5" step="0.125">
+            </div>
+
+            <div class="control-group">
+                <h3>Animation</h3>
+                <button id="toggleAnimation">Start Animation</button>
+                <label>Speed (<span id="speed-value">1.0</span>x)</label>
+                <input type="range" id="speed" min="0.1" max="3" value="1" step="0.1">
+            </div>
+
+            <div class="control-group">
+                <h3>Style</h3>
+                <label>Color</label>
+                <input type="color" id="curveColor" value="#3b82f6">
+                
+                <label>Line Width (<span id="width-value">2</span>px)</label>
+                <input type="range" id="lineWidth" min="1" max="10" value="2" step="0.5">
+            </div>
+        </div>
+
+        <div class="machine-settings">
+            <h3>Machine Export Settings</h3>
+            <select id="machineType">
+                <option value="flashcut">Flashcut CNC Mill</option>
+                <option value="snapmaker">Snapmaker Laser</option>
+            </select>
+
+            <div id="flashcutSettings">
+                <label>Feed Rate (inches/min)</label>
+                <input type="number" id="feedRate" value="400" min="1">
+                
+                <label>Depth (inches)</label>
+                <input type="number" id="depth" value="0.125" step="0.001" min="0">
+                
+                <label>Number of Passes</label>
+                <input type="number" id="passes" value="1" min="1">
+            </div>
+
+            <div id="snapmakerSettings" style="display: none;">
+                <label>Laser Power (%)</label>
+                <input type="number" id="laserPower" value="80" min="1" max="100">
+                
+                <label>Feed Rate (mm/min)</label>
+                <input type="number" id="laserFeed" value="1000" min="1">
+                
+                <label>Work Size (mm)</label>
+                <input type="number" id="workSize" value="100" min="1">
+            </div>
+
+            <div class="button-group">
+                <button id="exportSVG">Export SVG</button>
+                <button id="exportGcode">Generate G-code</button>
+            </div>
+            <div id="status" class="status"></div>
+        </div>
+    </div>
+
+    <script>
+        let sketch = function(p) {
+            let freqX = 3;
+            let freqY = 2;
+            let phase = Math.PI / 2;
+            let isAnimating = false;
+            let animationSpeed = 1;
+            let currentPhase = phase;
+            let curveColor = '#3b82f6';
+            let lineWidth = 2;
+            let points = [];
+            const width = 400;
+            const height = 400;
+            
+            p.setup = function() {
+                const canvas = p.createCanvas(width, height);
+                canvas.parent('canvas-container');
+                generatePoints();
+                p.frameRate(60);
+            };
+            
+            p.draw = function() {
+                p.background(248, 250, 252);
+                
+                // Draw axes
+                p.stroke(200);
+                p.strokeWeight(1);
+                p.line(0, height/2, width, height/2);
+                p.line(width/2, 0, width/2, height);
+                
+                // Draw curve
+                p.stroke(curveColor);
+                p.strokeWeight(lineWidth);
+                p.noFill();
+                p.beginShape();
+                points.forEach(point => {
+                    p.vertex(point.x + width/2, point.y + height/2);
+                });
+                p.endShape();
+                
+                if (isAnimating) {
+                    currentPhase += 0.02 * animationSpeed;
+                    generatePoints();
+                }
+            };
+            
+            function generatePoints() {
+                points = [];
+                const amplitude = 160;
+                for (let t = 0; t < 2 * Math.PI; t += 0.01) {
+                    const x = amplitude * Math.sin(freqX * t + currentPhase);
+                    const y = amplitude * Math.sin(freqY * t);
+                    points.push({x, y});
+                }
+            }
+            
+            // Expose functions to window
+            window.updateFreqX = function(value) {
+                freqX = value;
+                generatePoints();
+            };
+            
+            window.updateFreqY = function(value) {
+                freqY = value;
+                generatePoints();
+            };
+            
+            window.updatePhase = function(value) {
+                phase = value * Math.PI;
+                if (!isAnimating) {
+                    currentPhase = phase;
+                    generatePoints();
+                }
+            };
+            
+            window.toggleAnimation = function() {
+                isAnimating = !isAnimating;
+                if (!isAnimating) {
+                    currentPhase = phase;
+                    generatePoints();
+                }
+                return isAnimating;
+            };
+            
+            window.updateSpeed = function(value) {
+                animationSpeed = value;
+            };
+            
+            window.updateColor = function(value) {
+                curveColor = value;
+            };
+            
+            window.updateLineWidth = function(value) {
+                lineWidth = value;
+            };
+
+            window.getPoints = function() {
+                return points;
+            };
+        };
+
+        // Start p5 sketch
+        new p5(sketch);
+
+        // UI Event Handlers
+        document.getElementById('freqX').addEventListener('input', function(e) {
+            document.getElementById('freqX-value').textContent = e.target.value;
+            window.updateFreqX(Number(e.target.value));
+        });
+
+        document.getElementById('freqY').addEventListener('input', function(e) {
+            document.getElementById('freqY-value').textContent = e.target.value;
+            window.updateFreqY(Number(e.target.value));
+        });
+
+        document.getElementById('phase').addEventListener('input', function(e) {
+            document.getElementById('phase-value').textContent = e.target.value;
+            window.updatePhase(Number(e.target.value));
+        });
+
+        document.getElementById('toggleAnimation').addEventListener('click', function(e) {
+            const isNowAnimating = window.toggleAnimation();
+            e.target.textContent = isNowAnimating ? 'Stop Animation' : 'Start Animation';
+        });
+
+        document.getElementById('speed').addEventListener('input', function(e) {
+            document.getElementById('speed-value').textContent = e.target.value;
+            window.updateSpeed(Number(e.target.value));
+        });
+
+        document.getElementById('curveColor').addEventListener('input', function(e) {
+            window.updateColor(e.target.value);
+        });
+
+        document.getElementById('lineWidth').addEventListener('input', function(e) {
+            document.getElementById('width-value').textContent = e.target.value;
+            window.updateLineWidth(Number(e.target.value));
+        });
+
+        document.getElementById('machineType').addEventListener('change', function(e) {
+            document.getElementById('flashcutSettings').style.display = 
+                e.target.value === 'flashcut' ? 'block' : 'none';
+            document.getElementById('snapmakerSettings').style.display = 
+                e.target.value === 'snapmaker' ? 'block' : 'none';
+        });
+
+        // Export Functions
+        function generateFlashcutGcode() {
+            const points = window.getPoints();
+            const feedRate = document.getElementById('feedRate').value;
+            const depth = document.getElementById('depth').value;
+            const passes = document.getElementById('passes').value;
+            
+            let gcode = [];
+            gcode.push('% Lissajous Pattern - Flashcut CNC');
+            gcode.push('G90 G94 G17'); // Absolute, Feed per minute, XY plane
+            gcode.push('G20'); // Inches
+            gcode.push('M03 S10000'); // Start spindle
+            
+            for (let pass = 1; pass <= passes; pass++) {
+                const currentDepth = (depth / passes * pass).toFixed(4);
+                gcode.push(`(Pass ${pass} at depth ${currentDepth})`);
+                gcode.push('G00 Z0.1000');
+                
+                points.forEach((p, i) => {
+                    const x = (p.x / 200).toFixed(4); // Scale to inches
+                    const y = (p.y / 200).toFixed(4);
+                    if (i === 0) {
+                        gcode.push(`G00 X${x} Y${y}`);
+                        gcode.push(`G01 Z-${currentDepth} F${feedRate/2}`);
+                    } else {
+                        gcode.push(`G01 X${x} Y${y} F${feedRate}`);
+                    }
+                });
+            }
+            
+            gcode.push('G00 Z0.1000');
+            gcode.push('M05'); // Stop spindle
+            gcode.push('G00 X0 Y0');
+            gcode.push('M30');
+            
+            return gcode.join('\n');
+        }
+
+        function generateSnapmakerGcode() {
+            const points = window.getPoints();
+            const power = document.getElementById('laserPower').value;
+            const feedRate = document.getElementById('laserFeed').value;
+            const workSize = document.getElementById('workSize').value;
+            const scale = workSize / 400; // Scale to work size
+            
+            let gcode = [];
+            gcode.push('; Lissajous Pattern - Snapmaker');
+            gcode.push('M05 ; Laser off');
+            gcode.push('G21 ; Millimeters');
+            gcode.push('G90 ; Absolute positioning');
+            
+            points.forEach((p, i) => {
+                const x = ((p.x + 200) * scale).toFixed(3);
+                const y = ((p.y + 200) * scale).toFixed(3);
+                if (i === 0) {
+                    gcode.push(`G0 X${x} Y${y}`);
+                    gcode.push(`M03 S${Math.floor((power / 100) * 255)}`);
+                } else {
+                    gcode.push(`G1 X${x} Y${y} F${feedRate}`);
+                }
+            });
+            
+            gcode.push('M05 ; Laser off');
+            gcode.push('G0 X0 Y0');
+            
+            return gcode.join('\n');
+        }
+
+        document.getElementById('exportGcode').addEventListener('click', function() {
+            const machineType = document.getElementById('machineType').value;
+            const gcode = machineType === 'flashcut' ? 
+                generateFlashcutGcode() : 
+                generateSnapmakerGcode();
+            
+            const blob = new Blob([gcode], {type: 'text/plain'});
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `lissajous_${machineType}.gcode`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            const status = document.getElementById('status');
+            status.textContent = 'G-code generated and downloaded successfully!';</antArtifact>
+                                                                Add lissajous visualizer code
+          
